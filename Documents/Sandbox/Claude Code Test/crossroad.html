@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cross the Road</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    user-select: none;
+  }
+  h1 { font-size: 2rem; margin-bottom: 10px; color: #e94560; letter-spacing: 3px; }
+  #hud {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 10px;
+    font-size: 1.1rem;
+    color: #a0c4ff;
+  }
+  canvas {
+    border: 3px solid #e94560;
+    border-radius: 4px;
+    display: block;
+  }
+  #message {
+    margin-top: 14px;
+    font-size: 1.2rem;
+    min-height: 1.5rem;
+    color: #ffe66d;
+    letter-spacing: 1px;
+  }
+  #instructions {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: #555;
+  }
+</style>
+</head>
+<body>
+<h1>CROSS THE ROAD</h1>
+<div id="hud">
+  <span>SCORE: <span id="score">0</span></span>
+  <span>LIVES: <span id="lives">3</span></span>
+  <span>BEST: <span id="best">0</span></span>
+</div>
+<canvas id="canvas"></canvas>
+<div id="message">Press any arrow key to start!</div>
+<div id="instructions">Arrow keys to move &nbsp;|&nbsp; Reach the top to score</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const COLS = 11;
+const ROWS = 13;
+const CELL = 52;
+canvas.width  = COLS * CELL;
+canvas.height = ROWS * CELL;
+
+// Row types: 'safe', 'road', 'water'
+const ROW_TYPES = [
+  'safe',  // row 0  - finish zone
+  'road',  // row 1
+  'road',  // row 2
+  'road',  // row 3
+  'road',  // row 4
+  'safe',  // row 5  - median
+  'road',  // row 6
+  'road',  // row 7
+  'road',  // row 8
+  'road',  // row 9
+  'safe',  // row 10 - median
+  'road',  // row 11
+  'safe',  // row 12 - start zone
+];
+
+// Lane config: { speed, direction, color, numCars }
+const LANE_CONFIG = [
+  null,
+  { speed: 2.5, dir:  1, color: '#ff6b6b', numCars: 3 },
+  { speed: 2.0, dir: -1, color: '#ffa500', numCars: 2 },
+  { speed: 3.5, dir:  1, color: '#ff6b6b', numCars: 4 },
+  { speed: 1.8, dir: -1, color: '#ffcc00', numCars: 3 },
+  null,
+  { speed: 3.0, dir:  1, color: '#4ecdc4', numCars: 3 },
+  { speed: 2.2, dir: -1, color: '#ff6b6b', numCars: 4 },
+  { speed: 1.5, dir:  1, color: '#ffa500', numCars: 2 },
+  { speed: 3.8, dir: -1, color: '#4ecdc4', numCars: 3 },
+  null,
+  { speed: 2.8, dir:  1, color: '#ff6b6b', numCars: 5 },
+  null,
+];
+
+// Game state
+let player, cars, score, lives, best, state, animId;
+
+function initGame() {
+  player = { col: 5, row: 12, moving: false, dx: 0, dy: 0, progress: 0 };
+  cars = [];
+  score = 0;
+  lives = 3;
+  state = 'waiting'; // waiting, playing, dead, win
+  updateHUD();
+  buildCars();
+}
+
+function buildCars() {
+  cars = [];
+  for (let row = 0; row < ROWS; row++) {
+    const cfg = LANE_CONFIG[row];
+    if (!cfg) continue;
+    const spacing = Math.floor(COLS / cfg.numCars);
+    for (let i = 0; i < cfg.numCars; i++) {
+      cars.push({
+        row,
+        x: i * spacing * CELL,
+        speed: cfg.speed,
+        dir: cfg.dir,
+        color: cfg.color,
+        width: CELL * 1.6,
+        height: CELL * 0.72,
+      });
+    }
+  }
+}
+
+function updateHUD() {
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = lives;
+  document.getElementById('best').textContent = best || 0;
+}
+
+function setMessage(msg) {
+  document.getElementById('message').textContent = msg;
+}
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    if (state === 'waiting') {
+      state = 'playing';
+      setMessage('');
+      loop();
+    }
+    if (state === 'playing' && !player.moving) {
+      if (e.key === 'ArrowUp')    tryMove(0, -1);
+      if (e.key === 'ArrowDown')  tryMove(0,  1);
+      if (e.key === 'ArrowLeft')  tryMove(-1, 0);
+      if (e.key === 'ArrowRight') tryMove( 1, 0);
+    }
+    if (state === 'dead' || state === 'gameover') {
+      restartAfterDeath();
+    }
+  }
+});
+
+function tryMove(dc, dr) {
+  const nc = player.col + dc;
+  const nr = player.row + dr;
+  if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) return;
+  player.moving = true;
+  player.dx = dc;
+  player.dy = dr;
+  player.progress = 0;
+}
+
+function restartAfterDeath() {
+  if (lives <= 0) {
+    initGame();
+    state = 'waiting';
+    setMessage('Press any arrow key to start!');
+  } else {
+    player.col = 5;
+    player.row = 12;
+    player.moving = false;
+    state = 'playing';
+    setMessage('');
+  }
+}
+
+// Main loop
+let last = 0;
+function loop(ts = 0) {
+  const dt = Math.min((ts - last) / 16.67, 3);
+  last = ts;
+
+  if (state === 'playing') {
+    update(dt);
+  }
+  draw();
+
+  if (state === 'playing' || state === 'dead' || state === 'win') {
+    animId = requestAnimationFrame(loop);
+  }
+}
+
+function update(dt) {
+  // Move cars
+  cars.forEach(car => {
+    car.x += car.speed * car.dir * dt;
+    const wrap = COLS * CELL + car.width;
+    if (car.dir === 1 && car.x > COLS * CELL) car.x = -car.width;
+    if (car.dir === -1 && car.x < -car.width) car.x = COLS * CELL;
+  });
+
+  // Animate player movement
+  if (player.moving) {
+    player.progress += 0.18 * dt;
+    if (player.progress >= 1) {
+      player.col += player.dx;
+      player.row += player.dy;
+      player.moving = false;
+      player.progress = 0;
+      checkEvents();
+    }
+  } else {
+    checkEvents();
+  }
+}
+
+function checkEvents() {
+  // Reached top row
+  if (player.row === 0) {
+    score++;
+    if (score > (best || 0)) { best = score; }
+    updateHUD();
+    player.col = 5;
+    player.row = 12;
+    setMessage('Nice! Keep going!');
+    setTimeout(() => { if (state === 'playing') setMessage(''); }, 800);
+    return;
+  }
+
+  // Collision with cars
+  const px = player.col * CELL + CELL / 2;
+  const py = player.row * CELL + CELL / 2;
+  for (const car of cars) {
+    if (car.row !== player.row) continue;
+    const carLeft  = car.x;
+    const carRight = car.x + car.width;
+    const carTop   = car.row * CELL + (CELL - car.height) / 2;
+    const carBot   = carTop + car.height;
+    if (px > carLeft + 4 && px < carRight - 4 && py > carTop + 4 && py < carBot - 4) {
+      killPlayer();
+      return;
+    }
+  }
+}
+
+function killPlayer() {
+  lives--;
+  updateHUD();
+  state = 'dead';
+  setMessage(lives > 0
+    ? `Ouch! ${lives} lives left — press arrow to retry`
+    : 'GAME OVER — press arrow key to restart');
+  setTimeout(() => {
+    if (state === 'dead') {
+      restartAfterDeath();
+      if (lives > 0) state = 'playing';
+    }
+  }, 1800);
+}
+
+// Drawing
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Rows
+  for (let r = 0; r < ROWS; r++) {
+    const type = ROW_TYPES[r];
+    if (type === 'safe') {
+      ctx.fillStyle = r === 0 ? '#2d6a4f' : '#2d5016';
+    } else {
+      ctx.fillStyle = r % 2 === 0 ? '#2b2b2b' : '#333';
+    }
+    ctx.fillRect(0, r * CELL, canvas.width, CELL);
+
+    // Road markings
+    if (type === 'road') {
+      ctx.fillStyle = '#555';
+      for (let c = 0; c < COLS; c++) {
+        ctx.fillRect(c * CELL + CELL * 0.35, r * CELL + CELL / 2 - 2, CELL * 0.3, 4);
+      }
+    }
+
+    // Finish zone grass details
+    if (r === 0) {
+      ctx.fillStyle = '#52b788';
+      for (let c = 0; c < COLS; c++) {
+        ctx.fillRect(c * CELL + 8, r * CELL + 10, 6, 14);
+        ctx.fillRect(c * CELL + 20, r * CELL + 18, 6, 10);
+        ctx.fillRect(c * CELL + 36, r * CELL + 8, 6, 18);
+      }
+      ctx.fillStyle = '#ffe66d';
+      ctx.font = 'bold 14px Courier New';
+      ctx.textAlign = 'center';
+      ctx.fillText('-- FINISH --', canvas.width / 2, r * CELL + CELL / 2 + 5);
+    }
+  }
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c * CELL, 0); ctx.lineTo(c * CELL, canvas.height); ctx.stroke();
+  }
+
+  // Cars
+  cars.forEach(drawCar);
+
+  // Player
+  drawPlayer();
+
+  // Death flash
+  if (state === 'dead') {
+    ctx.fillStyle = 'rgba(255,0,0,0.15)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
+}
+
+function drawCar(car) {
+  const x = car.x;
+  const y = car.row * CELL + (CELL - car.height) / 2;
+  const w = car.width;
+  const h = car.height;
+  const r = 7;
+
+  // Body
+  ctx.fillStyle = car.color;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+  ctx.fill();
+
+  // Darker roof
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.roundRect(x + w * 0.2, y + h * 0.12, w * 0.6, h * 0.4, 4);
+  ctx.fill();
+
+  // Wheels
+  const wheelR = h * 0.22;
+  ctx.fillStyle = '#111';
+  [[x + w*0.2, y + h], [x + w*0.8, y + h]].forEach(([wx, wy]) => {
+    ctx.beginPath();
+    ctx.ellipse(wx, wy - wheelR * 0.6, wheelR * 1.1, wheelR, 0, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Headlights / taillights
+  const lightColor = car.dir === 1 ? '#ffe66d' : '#ff4444';
+  ctx.fillStyle = lightColor;
+  const lx = car.dir === 1 ? x + w - 5 : x + 3;
+  ctx.fillRect(lx, y + 4, 4, 6);
+  ctx.fillRect(lx, y + h - 10, 4, 6);
+}
+
+function drawPlayer() {
+  let px = player.col * CELL;
+  let py = player.row * CELL;
+
+  if (player.moving) {
+    px += player.dx * CELL * player.progress;
+    py += player.dy * CELL * player.progress;
+  }
+
+  const cx = px + CELL / 2;
+  const cy = py + CELL / 2;
+  const s = CELL * 0.42;
+  const dead = state === 'dead';
+
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(cx + 2, cy + s + 2, s * 0.85, s * 0.2, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // --- TRUMP CARICATURE ---
+
+  // Neck / collar
+  ctx.fillStyle = dead ? '#888' : '#e8956d';
+  ctx.fillRect(cx - s*0.22, cy + s*0.55, s*0.44, s*0.4);
+
+  // White shirt collar / tie knot
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.22, cy + s*0.55);
+  ctx.lineTo(cx - s*0.08, cy + s*0.72);
+  ctx.lineTo(cx, cy + s*0.62);
+  ctx.lineTo(cx + s*0.08, cy + s*0.72);
+  ctx.lineTo(cx + s*0.22, cy + s*0.55);
+  ctx.fill();
+  // Red tie
+  ctx.fillStyle = dead ? '#888' : '#c0392b';
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.08, cy + s*0.72);
+  ctx.lineTo(cx, cy + s*0.62);
+  ctx.lineTo(cx + s*0.08, cy + s*0.72);
+  ctx.lineTo(cx + s*0.05, cy + s*0.95);
+  ctx.lineTo(cx - s*0.05, cy + s*0.95);
+  ctx.fill();
+
+  // Face base (round, slightly jowly)
+  const faceColor = dead ? '#aaa' : '#f4a460';
+  ctx.fillStyle = faceColor;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, s*0.82, s*0.9, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Jowls
+  ctx.fillStyle = dead ? '#999' : '#e8956d';
+  ctx.beginPath();
+  ctx.ellipse(cx - s*0.7, cy + s*0.3, s*0.28, s*0.22, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + s*0.7, cy + s*0.3, s*0.28, s*0.22, 0.3, 0, Math.PI*2);
+  ctx.fill();
+
+  // Hair (iconic swept blonde combover)
+  const hairColor = dead ? '#bbb' : '#d4a017';
+  ctx.fillStyle = hairColor;
+  // Main swoosh
+  ctx.beginPath();
+  ctx.ellipse(cx + s*0.05, cy - s*0.72, s*0.65, s*0.32, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  // Front wave
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.8, cy - s*0.45);
+  ctx.quadraticCurveTo(cx - s*0.5, cy - s*1.1, cx + s*0.6, cy - s*0.9);
+  ctx.quadraticCurveTo(cx + s*0.9, cy - s*0.8, cx + s*0.82, cy - s*0.55);
+  ctx.quadraticCurveTo(cx + s*0.3, cy - s*0.5, cx - s*0.1, cy - s*0.62);
+  ctx.quadraticCurveTo(cx - s*0.5, cy - s*0.5, cx - s*0.8, cy - s*0.45);
+  ctx.fill();
+  // Side sweep-over
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.82, cy - s*0.4);
+  ctx.quadraticCurveTo(cx - s*0.9, cy - s*0.1, cx - s*0.75, cy + s*0.05);
+  ctx.quadraticCurveTo(cx - s*0.6, cy - s*0.1, cx - s*0.7, cy - s*0.35);
+  ctx.fill();
+
+  // Eye whites
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(cx - s*0.32, cy - s*0.15, s*0.21, s*0.17, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + s*0.32, cy - s*0.15, s*0.21, s*0.17, 0, 0, Math.PI*2); ctx.fill();
+
+  // Eye bags (characteristic)
+  ctx.fillStyle = dead ? '#999' : '#e0956d';
+  ctx.beginPath(); ctx.ellipse(cx - s*0.32, cy - s*0.04, s*0.22, s*0.08, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + s*0.32, cy - s*0.04, s*0.22, s*0.08, 0, 0, Math.PI*2); ctx.fill();
+
+  // Pupils
+  ctx.fillStyle = '#3a2a1a';
+  ctx.beginPath(); ctx.ellipse(cx - s*0.32, cy - s*0.16, s*0.09, s*0.1, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + s*0.32, cy - s*0.16, s*0.09, s*0.1, 0, 0, Math.PI*2); ctx.fill();
+
+  // Eye highlights
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.beginPath(); ctx.ellipse(cx - s*0.28, cy - s*0.19, s*0.04, s*0.04, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx + s*0.36, cy - s*0.19, s*0.04, s*0.04, 0, 0, Math.PI*2); ctx.fill();
+
+  // Eyebrows (thin, slightly arched)
+  ctx.strokeStyle = dead ? '#888' : '#b8860b';
+  ctx.lineWidth = s * 0.09;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.52, cy - s*0.35);
+  ctx.quadraticCurveTo(cx - s*0.32, cy - s*0.42, cx - s*0.12, cy - s*0.36);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + s*0.12, cy - s*0.36);
+  ctx.quadraticCurveTo(cx + s*0.32, cy - s*0.42, cx + s*0.52, cy - s*0.35);
+  ctx.stroke();
+
+  // Nose (bulbous)
+  ctx.fillStyle = dead ? '#999' : '#e8956d';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + s*0.12, s*0.18, s*0.15, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx - s*0.15, cy + s*0.18, s*0.1, s*0.08, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx + s*0.15, cy + s*0.18, s*0.1, s*0.08, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Mouth (pursed / pout)
+  ctx.fillStyle = dead ? '#888' : '#c0604a';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + s*0.44, s*0.28, s*0.1, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Upper lip pout
+  ctx.fillStyle = dead ? '#999' : '#d4785a';
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.28, cy + s*0.44);
+  ctx.quadraticCurveTo(cx - s*0.14, cy + s*0.32, cx, cy + s*0.36);
+  ctx.quadraticCurveTo(cx + s*0.14, cy + s*0.32, cx + s*0.28, cy + s*0.44);
+  ctx.quadraticCurveTo(cx, cy + s*0.38, cx - s*0.28, cy + s*0.44);
+  ctx.fill();
+  // Mouth line
+  ctx.strokeStyle = '#a04030';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - s*0.28, cy + s*0.44);
+  ctx.lineTo(cx + s*0.28, cy + s*0.44);
+  ctx.stroke();
+}
+
+// Kick off
+initGame();
+draw(); // draw initial frame without starting loop
+</script>
+</body>
+</html>
