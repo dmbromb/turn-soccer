@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Freeze Kick</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #1a1a2e; font-family: 'Segoe UI', Arial, sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+  canvas { display: block; }
+
+  /* ── Screens ── */
+  .screen {
+    position: fixed; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; z-index: 10;
+    background: rgba(10,15,30,0.92); color: #fff;
+  }
+  .screen.hidden { display: none; }
+
+  /* Menu */
+  #menu-screen h1 {
+    font-size: 4rem; font-weight: 900; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #4ade80;
+    text-shadow: 0 0 30px rgba(74,222,128,0.5);
+  }
+  #menu-screen p { font-size: 1.2rem; color: #94a3b8; margin: 0.6rem 0 2.5rem; letter-spacing: 0.08em; }
+
+  /* Level select */
+  #level-screen h2 { font-size: 1.8rem; color: #4ade80; margin-bottom: 1.6rem; letter-spacing: 0.1em; }
+  .level-cards { display: flex; gap: 1.4rem; }
+  .level-card {
+    width: 200px; padding: 1.5rem 1.2rem; border: 2px solid #334155;
+    border-radius: 12px; background: #1e293b; cursor: pointer; text-align: center;
+    transition: border-color .2s, transform .15s;
+  }
+  .level-card:hover { border-color: #4ade80; transform: translateY(-4px); }
+  .level-card h3 { font-size: 1.05rem; color: #4ade80; margin-bottom: 0.5rem; }
+  .level-card p { font-size: 0.82rem; color: #94a3b8; line-height: 1.5; }
+  .level-card .turns { font-size: 0.75rem; color: #64748b; margin-top: 0.8rem; }
+
+  /* Win / Lose */
+  #win-screen h1 { font-size: 3.5rem; color: #4ade80; text-shadow: 0 0 30px rgba(74,222,128,0.6); }
+  #lose-screen h1 { font-size: 3.5rem; color: #f87171; text-shadow: 0 0 30px rgba(248,113,113,0.6); }
+  #win-screen p, #lose-screen p { font-size: 1.1rem; color: #94a3b8; margin: 0.8rem 0 2rem; }
+
+  /* Buttons */
+  .btn {
+    padding: 0.75rem 2rem; font-size: 1rem; font-weight: 700;
+    border: none; border-radius: 8px; cursor: pointer; margin: 0.4rem;
+    text-transform: uppercase; letter-spacing: 0.08em; transition: opacity .15s, transform .1s;
+  }
+  .btn:hover { opacity: 0.88; transform: scale(1.03); }
+  .btn-primary { background: #4ade80; color: #0f172a; }
+  .btn-secondary { background: #334155; color: #cbd5e1; }
+  .btn-danger { background: #ef4444; color: #fff; }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 5;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.6rem 1.2rem; background: rgba(0,0,0,0.55);
+    pointer-events: none;
+  }
+  #hud.hidden { display: none; }
+  .hud-item { color: #fff; font-size: 0.9rem; }
+  .hud-item span { color: #4ade80; font-weight: 700; }
+  #hud-status { color: #fbbf24; font-weight: 600; font-size: 0.95rem; }
+
+  /* ── Action Panel ── */
+  #action-panel {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 5;
+    background: rgba(0,0,0,0.75); backdrop-filter: blur(6px);
+    padding: 0.8rem 1rem 1rem;
+    transition: transform .25s;
+  }
+  #action-panel.hidden { transform: translateY(110%); }
+
+  .action-row { display: flex; justify-content: center; gap: 0.7rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+
+  .action-type-btn {
+    padding: 0.5rem 1.4rem; border: 2px solid #334155; border-radius: 8px;
+    background: #1e293b; color: #cbd5e1; font-size: 0.9rem; font-weight: 700;
+    cursor: pointer; transition: border-color .15s, background .15s;
+    text-transform: uppercase; letter-spacing: 0.06em;
+  }
+  .action-type-btn.active { border-color: #4ade80; background: #14532d; color: #fff; }
+  .action-type-btn:hover:not(.active) { border-color: #64748b; }
+
+  /* Sub-option rows */
+  .sub-section { text-align: center; }
+  .sub-label { font-size: 0.72rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.35rem; }
+
+  /* Compass grid */
+  .compass-grid {
+    display: grid; grid-template-columns: repeat(3, 40px); gap: 4px;
+    justify-content: center; margin: 0 auto 0.5rem;
+  }
+  .dir-btn {
+    width: 40px; height: 40px; border: 2px solid #334155; border-radius: 6px;
+    background: #1e293b; color: #cbd5e1; font-size: 0.7rem; font-weight: 700;
+    cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .dir-btn.active { border-color: #4ade80; background: #14532d; color: #fff; }
+  .dir-btn:hover:not(.active) { border-color: #64748b; }
+  .dir-btn.center-empty { visibility: hidden; }
+
+  /* Potency / type row */
+  .opt-btn {
+    padding: 0.4rem 1rem; border: 2px solid #334155; border-radius: 6px;
+    background: #1e293b; color: #cbd5e1; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: border-color .12s, background .12s;
+    text-transform: capitalize;
+  }
+  .opt-btn.active { border-color: #fbbf24; background: #451a03; color: #fff; }
+  .opt-btn:hover:not(.active) { border-color: #64748b; }
+
+  #confirm-btn {
+    display: block; margin: 0.5rem auto 0;
+    padding: 0.55rem 2.5rem; background: #4ade80; color: #0f172a;
+    border: none; border-radius: 8px; font-size: 1rem; font-weight: 800;
+    cursor: pointer; text-transform: uppercase; letter-spacing: 0.08em;
+    transition: opacity .15s;
+  }
+  #confirm-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  #confirm-btn:hover:not(:disabled) { opacity: 0.88; }
+</style>
+</head>
+<body>
+
+<!-- ── Screens ── -->
+<div id="menu-screen" class="screen">
+  <h1>Freeze Kick</h1>
+  <p>3D Turn-Based Soccer</p>
+  <button class="btn btn-primary" onclick="showScreen('level')">Play</button>
+</div>
+
+<div id="level-screen" class="screen hidden">
+  <h2>Select Level</h2>
+  <div class="level-cards">
+    <div class="level-card" onclick="startLevel(0)">
+      <h3>1v1 Breakaway</h3>
+      <p>1 Attacker vs 1 Goalkeeper. Beat the keeper to score.</p>
+      <div class="turns">10 turns max</div>
+    </div>
+    <div class="level-card" onclick="startLevel(1)">
+      <h3>2v2 Build-Up</h3>
+      <p>2 Attackers vs 2 Defenders. Work the ball past them.</p>
+      <div class="turns">15 turns max</div>
+    </div>
+    <div class="level-card" onclick="startLevel(2)">
+      <h3>5v5 Full Attack</h3>
+      <p>5 Attackers vs 4 Defenders + GK. Full squad challenge.</p>
+      <div class="turns">20 turns max</div>
+    </div>
+  </div>
+  <button class="btn btn-secondary" style="margin-top:1.5rem" onclick="showScreen('menu')">Back</button>
+</div>
+
+<div id="win-screen" class="screen hidden">
+  <h1>GOAL!</h1>
+  <p id="win-msg">You scored!</p>
+  <div>
+    <button class="btn btn-primary" id="next-btn" onclick="nextLevel()">Next Level</button>
+    <button class="btn btn-secondary" onclick="showScreen('level')">Level Select</button>
+  </div>
+</div>
+
+<div id="lose-screen" class="screen hidden">
+  <h1>GAME OVER</h1>
+  <p id="lose-msg">Better luck next time.</p>
+  <div>
+    <button class="btn btn-danger" onclick="retryLevel()">Retry</button>
+    <button class="btn btn-secondary" onclick="showScreen('level')">Level Select</button>
+  </div>
+</div>
+
+<!-- ── HUD ── -->
+<div id="hud" class="hidden">
+  <div class="hud-item">Level <span id="hud-level">1</span></div>
+  <div id="hud-status">Your turn</div>
+  <div class="hud-item">Turns <span id="hud-turns">0</span> / <span id="hud-max">10</span></div>
+</div>
+
+<!-- ── Action Panel ── -->
+<div id="action-panel" class="hidden">
+  <!-- Step 1: action type -->
+  <div class="action-row" id="type-row">
+    <button class="action-type-btn" data-type="DRIBBLE" onclick="selectActionType('DRIBBLE')">Dribble</button>
+    <button class="action-type-btn" data-type="PASS"    onclick="selectActionType('PASS')">Pass</button>
+    <button class="action-type-btn" data-type="SHOOT"   onclick="selectActionType('SHOOT')">Shoot</button>
+  </div>
+
+  <!-- Step 2: direction -->
+  <div class="sub-section" id="dir-section" style="display:none">
+    <div class="sub-label">Direction</div>
+    <div class="compass-grid" id="compass">
+      <!-- built by JS -->
+    </div>
+  </div>
+
+  <!-- Step 2b: potency (PASS) or type (SHOOT) -->
+  <div class="sub-section" id="opt-section" style="display:none">
+    <div class="sub-label" id="opt-label">Potency</div>
+    <div class="action-row" id="opt-row"></div>
+  </div>
+
+  <button id="confirm-btn" disabled onclick="confirmAction()">Confirm</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────
+// 1. CONSTANTS & CONFIG
+// ─────────────────────────────────────────────────
+const FIELD_W = 30, FIELD_L = 50;
+const GOAL_W = 7.32, GOAL_H = 2.44, GOAL_D = 0.5;
+const AI_GOAL_Z = -24, PLAYER_GOAL_Z = 24;
+const TACKLE_RADIUS = 1.2;
+const DRIBBLE_DIST = 2.5;
+const PASS_DIST = { low: 4, medium: 7, high: 11 };
+const SHOT_DIST = 18;
+const SHOT_HEIGHT = { curled: 2.5, power: 1.2, lob: 5 };
+const PASS_HEIGHT = { low: 0.8, medium: 1.6, high: 2.4 };
+const ANIM_MS = 700;
+
+const DIR_VECTORS = {
+  N:  { x: 0,  z:-1 },
+  NE: { x: 1,  z:-1 },
+  E:  { x: 1,  z: 0 },
+  SE: { x: 1,  z: 1 },
+  S:  { x: 0,  z: 1 },
+  SW: { x:-1,  z: 1 },
+  W:  { x:-1,  z: 0 },
+  NW: { x:-1,  z:-1 },
+};
+// Normalised dir vectors
+Object.values(DIR_VECTORS).forEach(v => {
+  const len = Math.sqrt(v.x*v.x + v.z*v.z);
+  v.nx = v.x/len; v.nz = v.z/len;
+});
+
+const COMPASS_LAYOUT = [
+  ['NW','N','NE'],
+  ['W', null,'E'],
+  ['SW','S','SE'],
+];
+
+const TEAM = { PLAYER: 'player', AI: 'ai' };
+const ROLE = { ATTACKER: 'attacker', DEFENDER: 'defender', GK: 'gk' };
+const STATE = { MENU:'menu', LEVEL:'level', PLAYING:'playing', RESOLVING:'resolving', WIN:'win', LOSE:'lose' };
+
+const COLORS = {
+  player: 0x3b82f6,
+  playerHead: 0x93c5fd,
+  ai: 0xef4444,
+  aiHead: 0xfca5a5,
+  ball: 0xffffff,
+  field: 0x16a34a,
+  fieldAlt: 0x15803d,
+  line: 0xffffff,
+  goalPost: 0xf1f5f9,
+  sky: 0x7dd3fc,
+};
+
+// ─────────────────────────────────────────────────
+// 2. STATE MACHINE
+// ─────────────────────────────────────────────────
+let gameState = STATE.MENU;
+let currentLevel = 0;
+let turnCount = 0;
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById('hud').classList.add('hidden');
+  document.getElementById('action-panel').classList.add('hidden');
+
+  const map = { menu:'menu-screen', level:'level-screen', win:'win-screen', lose:'lose-screen' };
+  if (map[name]) document.getElementById(map[name]).classList.remove('hidden');
+  gameState = name === 'menu' ? STATE.MENU : name === 'level' ? STATE.LEVEL :
+              name === 'win'  ? STATE.WIN  : STATE.LOSE;
+}
+
+// ─────────────────────────────────────────────────
+// 3. INIT THREE.JS
+// ─────────────────────────────────────────────────
+let renderer, scene, camera;
+
+function initThree() {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(COLORS.sky);
+  scene.fog = new THREE.FogExp2(COLORS.sky, 0.018);
+
+  camera = new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.1, 200);
+  camera.position.set(0, 14, 22);
+  camera.lookAt(0, 0, 0);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  scene.add(ambient);
+
+  const sun = new THREE.DirectionalLight(0xfff8e7, 0.9);
+  sun.position.set(10, 20, 15);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 80;
+  sun.shadow.camera.left = -25; sun.shadow.camera.right = 25;
+  sun.shadow.camera.top = 35;  sun.shadow.camera.bottom = -35;
+  scene.add(sun);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ─────────────────────────────────────────────────
+// 4. BUILD SCENE (field, goals, markings)
+// ─────────────────────────────────────────────────
+let sceneObjects = []; // keep refs for cleanup
+
+function buildScene() {
+  // Field plane
+  const fieldGeo = new THREE.PlaneGeometry(FIELD_W, FIELD_L, 6, 10);
+  const fieldMat = new THREE.MeshLambertMaterial({ color: COLORS.field });
+  const field = new THREE.Mesh(fieldGeo, fieldMat);
+  field.rotation.x = -Math.PI/2;
+  field.receiveShadow = true;
+  scene.add(field);
+
+  // Alternating stripe
+  const stripe = new THREE.Mesh(
+    new THREE.PlaneGeometry(FIELD_W, FIELD_L/2),
+    new THREE.MeshLambertMaterial({ color: COLORS.fieldAlt })
+  );
+  stripe.rotation.x = -Math.PI/2;
+  stripe.position.set(0, 0.001, -FIELD_L/4);
+  scene.add(stripe);
+
+  // White line markings
+  const lineMat = new THREE.LineBasicMaterial({ color: COLORS.line });
+  function addLine(points) {
+    const geo = new THREE.BufferGeometry().setFromPoints(points.map(([x,z]) => new THREE.Vector3(x,0.02,z)));
+    scene.add(new THREE.Line(geo, lineMat));
+  }
+  // Boundary
+  const hw = FIELD_W/2, hl = FIELD_L/2;
+  addLine([[-hw,-hl],[ hw,-hl],[ hw, hl],[-hw, hl],[-hw,-hl]]);
+  // Centre line
+  addLine([[-hw,0],[hw,0]]);
+  // Centre circle (approx)
+  const cc = [];
+  for(let i=0;i<=32;i++){ const a=i/32*Math.PI*2; cc.push([Math.cos(a)*4.5, Math.sin(a)*4.5]); }
+  addLine(cc);
+  // Penalty areas
+  addLine([[-9.15,-hl],[-9.15,-hl+16.5],[9.15,-hl+16.5],[9.15,-hl]]);
+  addLine([[-9.15, hl],[-9.15, hl-16.5],[9.15, hl-16.5],[9.15, hl]]);
+
+  // Goals
+  buildGoal(AI_GOAL_Z, false);
+  buildGoal(PLAYER_GOAL_Z, true);
+
+  // Save field ref (don't need per-level cleanup)
+}
+
+function buildGoal(z, isPlayerGoal) {
+  const mat = new THREE.MeshLambertMaterial({ color: COLORS.goalPost });
+  const posts = [
+    [-GOAL_W/2, 0, 0], [GOAL_W/2, 0, 0], // left post, right post
+  ];
+  const dir = isPlayerGoal ? 1 : -1;
+
+  // Left post
+  const lp = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,GOAL_H,8), mat);
+  lp.position.set(-GOAL_W/2, GOAL_H/2, z);
+  scene.add(lp);
+  // Right post
+  const rp = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,GOAL_H,8), mat);
+  rp.position.set( GOAL_W/2, GOAL_H/2, z);
+  scene.add(rp);
+  // Crossbar
+  const cb = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,GOAL_W,8), mat);
+  cb.rotation.z = Math.PI/2;
+  cb.position.set(0, GOAL_H, z);
+  scene.add(cb);
+  // Back net (simple plane)
+  const net = new THREE.Mesh(
+    new THREE.PlaneGeometry(GOAL_W, GOAL_H),
+    new THREE.MeshLambertMaterial({ color: 0xcccccc, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+  );
+  net.position.set(0, GOAL_H/2, z + dir * GOAL_D);
+  scene.add(net);
+}
+
+// ─────────────────────────────────────────────────
+// 5. ENTITY CLASS + REGISTRY
+// ─────────────────────────────────────────────────
+class Entity {
+  constructor({ team, role, x, z }) {
+    this.team = team;
+    this.role = role;
+    this.pos = new THREE.Vector3(x, 0, z);
+    this.facingDir = 'N';
+    this.mesh = this._buildMesh();
+    scene.add(this.mesh);
+    this._syncMesh();
+  }
+
+  _buildMesh() {
+    const isPlayer = this.team === TEAM.PLAYER;
+    const bodyColor = isPlayer ? COLORS.player : COLORS.ai;
+    const headColor = isPlayer ? COLORS.playerHead : COLORS.aiHead;
+
+    const group = new THREE.Group();
+
+    // Body (cylinder)
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.35, 0.35, 1.0, 8),
+      new THREE.MeshLambertMaterial({ color: bodyColor, flatShading: true })
+    );
+    body.position.y = 0.5;
+    body.castShadow = true;
+    group.add(body);
+
+    // Head (sphere)
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 8, 6),
+      new THREE.MeshLambertMaterial({ color: headColor, flatShading: true })
+    );
+    head.position.y = 1.28;
+    head.castShadow = true;
+    group.add(head);
+
+    // GK: add small box indicator
+    if (this.role === ROLE.GK) {
+      const gloves = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 0.15, 0.15),
+        new THREE.MeshLambertMaterial({ color: 0xfbbf24 })
+      );
+      gloves.position.y = 0.85;
+      group.add(gloves);
+    }
+
+    return group;
+  }
+
+  _syncMesh() {
+    this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
+  }
+
+  setPos(x, z) {
+    this.pos.set(x, 0, z);
+    this._syncMesh();
+  }
+}
+
+let entities = [];
+let playerEntity = null; // the entity the player controls (ball carrier)
+
+// ─────────────────────────────────────────────────
+// 6. BALL
+// ─────────────────────────────────────────────────
+let ballMesh = null;
+let ballPos = new THREE.Vector3();
+
+function initBall(x, z) {
+  if (!ballMesh) {
+    ballMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 10, 8),
+      new THREE.MeshLambertMaterial({ color: COLORS.ball, flatShading: true })
+    );
+    ballMesh.castShadow = true;
+    scene.add(ballMesh);
+  }
+  ballPos.set(x, 0.2, z);
+  ballMesh.position.copy(ballPos);
+}
+
+// ─────────────────────────────────────────────────
+// 7. LEVELS CONFIG
+// ─────────────────────────────────────────────────
+const LEVELS = [
+  {
+    name: '1v1 Breakaway',
+    maxTurns: 10,
+    setup: [
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x: 0,  z: 8  },
+    ],
+    ai: [
+      { team: TEAM.AI, role: ROLE.GK, x: 0, z: -20 },
+    ],
+    ballStart: { x: 0, z: 8 },
+  },
+  {
+    name: '2v2 Build-Up',
+    maxTurns: 15,
+    setup: [
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x:-2, z: 10 },
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x: 2, z:  8 },
+    ],
+    ai: [
+      { team: TEAM.AI, role: ROLE.DEFENDER, x:-1, z:-2  },
+      { team: TEAM.AI, role: ROLE.GK,       x: 0, z:-20 },
+    ],
+    ballStart: { x: -2, z: 10 },
+  },
+  {
+    name: '5v5 Full Attack',
+    maxTurns: 20,
+    setup: [
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x:-4, z: 12 },
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x: 0, z: 10 },
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x: 4, z: 12 },
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x:-2, z:  6 },
+      { team: TEAM.PLAYER, role: ROLE.ATTACKER, x: 2, z:  6 },
+    ],
+    ai: [
+      { team: TEAM.AI, role: ROLE.DEFENDER, x:-4, z:-4  },
+      { team: TEAM.AI, role: ROLE.DEFENDER, x: 0, z:-2  },
+      { team: TEAM.AI, role: ROLE.DEFENDER, x: 4, z:-4  },
+      { team: TEAM.AI, role: ROLE.DEFENDER, x: 2, z:-10 },
+      { team: TEAM.AI, role: ROLE.GK,       x: 0, z:-20 },
+    ],
+    ballStart: { x: 0, z: 10 },
+  },
+];
+
+// ─────────────────────────────────────────────────
+// 8. START LEVEL
+// ─────────────────────────────────────────────────
+function startLevel(idx) {
+  currentLevel = idx;
+  turnCount = 0;
+  ui.reset();
+
+  // Clear old entities
+  entities.forEach(e => scene.remove(e.mesh));
+  entities = [];
+  playerEntity = null;
+
+  const lvl = LEVELS[idx];
+
+  // Spawn player entities
+  lvl.setup.forEach(cfg => {
+    const e = new Entity(cfg);
+    entities.push(e);
+  });
+
+  // Spawn AI entities
+  lvl.ai.forEach(cfg => {
+    const e = new Entity(cfg);
+    entities.push(e);
+  });
+
+  // Ball starts at first player attacker
+  const firstAttacker = entities.find(e => e.team === TEAM.PLAYER);
+  playerEntity = firstAttacker;
+  initBall(lvl.ballStart.x, lvl.ballStart.z);
+
+  // Update HUD
+  document.getElementById('hud-level').textContent = idx + 1;
+  document.getElementById('hud-max').textContent = lvl.maxTurns;
+  document.getElementById('hud-turns').textContent = turnCount;
+
+  // Hide all screens, show HUD + panel
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  document.getElementById('hud').classList.remove('hidden');
+
+  // Camera reset
+  cameraRig.reset();
+
+  gameState = STATE.PLAYING;
+  setHudStatus('Your turn');
+  showActionPanel();
+}
+
+function retryLevel() { startLevel(currentLevel); }
+function nextLevel() {
+  if (currentLevel < LEVELS.length - 1) {
+    startLevel(currentLevel + 1);
+  } else {
+    showScreen('menu');
+  }
+}
+
+// ─────────────────────────────────────────────────
+// 9. ACTION PANEL + UI STATE
+// ─────────────────────────────────────────────────
+const ui = {
+  type: null,       // 'DRIBBLE' | 'PASS' | 'SHOOT'
+  dir: null,        // e.g. 'N'
+  opt: null,        // potency or shoot type
+
+  reset() {
+    this.type = null; this.dir = null; this.opt = null;
+    document.querySelectorAll('.action-type-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('dir-section').style.display = 'none';
+    document.getElementById('opt-section').style.display = 'none';
+    document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('confirm-btn').disabled = true;
+  },
+
+  checkConfirm() {
+    const needsOpt = (this.type === 'PASS' || this.type === 'SHOOT');
+    const ok = this.type && this.dir && (!needsOpt || this.opt);
+    document.getElementById('confirm-btn').disabled = !ok;
+  }
+};
+
+// Build compass once
+(function buildCompass() {
+  const grid = document.getElementById('compass');
+  grid.innerHTML = '';
+  COMPASS_LAYOUT.forEach(row => {
+    row.forEach(dir => {
+      const btn = document.createElement('button');
+      btn.className = 'dir-btn';
+      if (!dir) { btn.classList.add('center-empty'); btn.disabled = true; }
+      else {
+        btn.textContent = dir;
+        btn.dataset.dir = dir;
+        btn.onclick = () => selectDir(dir);
+      }
+      grid.appendChild(btn);
+    });
+  });
+})();
+
+function selectActionType(type) {
+  ui.type = type; ui.dir = null; ui.opt = null;
+  document.querySelectorAll('.action-type-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.type === type));
+  document.querySelectorAll('.dir-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.opt-btn').forEach(b => b.classList.remove('active'));
+
+  document.getElementById('dir-section').style.display = 'block';
+
+  const optSection = document.getElementById('opt-section');
+  const optRow = document.getElementById('opt-row');
+  const optLabel = document.getElementById('opt-label');
+
+  if (type === 'PASS') {
+    optLabel.textContent = 'Potency';
+    optRow.innerHTML = '';
+    ['low','medium','high'].forEach(p => {
+      const b = document.createElement('button');
+      b.className = 'opt-btn'; b.textContent = p; b.dataset.opt = p;
+      b.onclick = () => selectOpt(p);
+      optRow.appendChild(b);
+    });
+    optSection.style.display = 'block';
+  } else if (type === 'SHOOT') {
+    optLabel.textContent = 'Shot Type';
+    optRow.innerHTML = '';
+    ['curled','power','lob'].forEach(t => {
+      const b = document.createElement('button');
+      b.className = 'opt-btn'; b.textContent = t; b.dataset.opt = t;
+      b.onclick = () => selectOpt(t);
+      optRow.appendChild(b);
+    });
+    optSection.style.display = 'block';
+  } else {
+    optSection.style.display = 'none';
+  }
+  ui.checkConfirm();
+}
+
+function selectDir(dir) {
+  ui.dir = dir;
+  document.querySelectorAll('.dir-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.dir === dir));
+  ui.checkConfirm();
+}
+
+function selectOpt(opt) {
+  ui.opt = opt;
+  document.querySelectorAll('.opt-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.opt === opt));
+  ui.checkConfirm();
+}
+
+function showActionPanel() {
+  ui.reset();
+  document.getElementById('action-panel').classList.remove('hidden');
+}
+
+function hideActionPanel() {
+  document.getElementById('action-panel').classList.add('hidden');
+}
+
+function setHudStatus(msg) {
+  document.getElementById('hud-status').textContent = msg;
+}
+
+// ─────────────────────────────────────────────────
+// 10. RESOLVE TURN
+// ─────────────────────────────────────────────────
+async function confirmAction() {
+  if (gameState !== STATE.PLAYING) return;
+  const action = { type: ui.type, dir: ui.dir, opt: ui.opt };
+
+  gameState = STATE.RESOLVING;
+  hideActionPanel();
+  setHudStatus('Resolving...');
+
+  // AI decisions
+  const aiMoves = [];
+  entities.filter(e => e.team === TEAM.AI).forEach(e => {
+    aiMoves.push({ entity: e, move: aiDecide(e) });
+  });
+
+  // Compute ball destination
+  const ballDest = computeBallDest(action);
+
+  // Animate
+  await animateTurn(action, ballDest, aiMoves);
+
+  // Apply positions
+  ballPos.copy(ballDest.finalBallPos);
+  ballMesh.position.copy(ballPos);
+  ballMesh.position.y = 0.2;
+
+  if (action.type === 'DRIBBLE' || action.type === 'PASS') {
+    if (action.type === 'DRIBBLE') {
+      playerEntity.setPos(ballDest.finalBallPos.x, ballDest.finalBallPos.z);
+      playerEntity.facingDir = action.dir;
+    } else if (action.type === 'PASS') {
+      // find nearest teammate in direction to receive pass
+      const receiver = findPassReceiver(action.dir);
+      if (receiver) {
+        playerEntity = receiver;
+        playerEntity.facingDir = 'N';
+      }
+    }
+  }
+
+  // Apply AI moves
+  aiMoves.forEach(({ entity, move }) => applyAiMove(entity, move));
+
+  turnCount++;
+  document.getElementById('hud-turns').textContent = turnCount;
+
+  // Check outcomes
+  const goalScored = checkGoal(ballDest.finalBallPos);
+  if (goalScored) {
+    const lvl = LEVELS[currentLevel];
+    document.getElementById('win-msg').textContent =
+      `You scored on level ${currentLevel+1}: ${lvl.name}!`;
+    document.getElementById('next-btn').textContent =
+      currentLevel < LEVELS.length-1 ? 'Next Level' : 'Back to Menu';
+    showScreen('win');
+    return;
+  }
+
+  const tackled = checkTackle();
+  if (tackled) {
+    document.getElementById('lose-msg').textContent = 'You were tackled!';
+    showScreen('lose');
+    return;
+  }
+
+  if (turnCount >= LEVELS[currentLevel].maxTurns) {
+    document.getElementById('lose-msg').textContent = 'Out of turns!';
+    showScreen('lose');
+    return;
+  }
+
+  gameState = STATE.PLAYING;
+  setHudStatus('Your turn');
+  showActionPanel();
+}
+
+// ─────────────────────────────────────────────────
+// 11. BALL PHYSICS
+// ─────────────────────────────────────────────────
+function computeBallDest(action) {
+  const dv = DIR_VECTORS[action.dir];
+  let finalPos = new THREE.Vector3();
+
+  if (action.type === 'DRIBBLE') {
+    finalPos.set(
+      clamp(ballPos.x + dv.nx * DRIBBLE_DIST, -(FIELD_W/2-0.5), FIELD_W/2-0.5),
+      0.2,
+      clamp(ballPos.z + dv.nz * DRIBBLE_DIST, -(FIELD_L/2-0.5), FIELD_L/2-0.5)
+    );
+    return { type:'dribble', finalBallPos: finalPos };
+  }
+
+  if (action.type === 'PASS') {
+    const dist = PASS_DIST[action.opt] || PASS_DIST.medium;
+    finalPos.set(
+      clamp(ballPos.x + dv.nx * dist, -FIELD_W/2, FIELD_W/2),
+      0.2,
+      clamp(ballPos.z + dv.nz * dist, -FIELD_L/2, FIELD_L/2)
+    );
+    const height = PASS_HEIGHT[action.opt] || 1.5;
+    return { type:'pass', finalBallPos: finalPos, arcHeight: height };
+  }
+
+  if (action.type === 'SHOOT') {
+    // Aim toward AI goal
+    const toGoalZ = AI_GOAL_Z;
+    const sideOffset = (action.dir === 'NW' || action.dir === 'W' || action.dir === 'SW') ? -2.5 :
+                       (action.dir === 'NE' || action.dir === 'E' || action.dir === 'SE') ?  2.5 : 0;
+    finalPos.set(
+      clamp(ballPos.x + sideOffset, -GOAL_W/2, GOAL_W/2),
+      0.2,
+      toGoalZ
+    );
+    const height = SHOT_HEIGHT[action.opt] || 2;
+    return { type:'shoot', finalBallPos: finalPos, arcHeight: height };
+  }
+
+  finalPos.copy(ballPos);
+  return { type:'none', finalBallPos: finalPos };
+}
+
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+function parabolicPoint(from, to, height, t) {
+  const x = from.x + (to.x - from.x) * t;
+  const z = from.z + (to.z - from.z) * t;
+  const y = height * 4 * t * (1 - t) + (from.y * (1-t) + to.y * t);
+  return new THREE.Vector3(x, y, z);
+}
+
+// ─────────────────────────────────────────────────
+// 12. AI LOGIC
+// ─────────────────────────────────────────────────
+function aiDecide(entity) {
+  if (entity.role === ROLE.GK) return aiGoalkeeperDecide(entity);
+  if (entity.role === ROLE.DEFENDER) return aiDefenderDecide(entity);
+  return { type: 'idle' };
+}
+
+function aiGoalkeeperDecide(gk) {
+  // Move toward ball's X, stay on goal line
+  return {
+    type: 'gk_move',
+    targetX: clamp(ballPos.x, -GOAL_W/2 + 0.5, GOAL_W/2 - 0.5),
+    targetZ: AI_GOAL_Z + 1.5,
+  };
+}
+
+function aiDefenderDecide(def) {
+  // Predict where ball carrier is going (L3 style)
+  const toCarrier = new THREE.Vector3(
+    playerEntity.pos.x - def.pos.x,
+    0,
+    playerEntity.pos.z - def.pos.z
+  );
+  const dist = toCarrier.length();
+  if (dist < 0.01) return { type: 'idle' };
+
+  toCarrier.normalize();
+  const step = Math.min(2.2, dist);
+  return {
+    type: 'move',
+    targetX: def.pos.x + toCarrier.x * step,
+    targetZ: def.pos.z + toCarrier.z * step,
+  };
+}
+
+function applyAiMove(entity, move) {
+  if (move.type === 'gk_move' || move.type === 'move') {
+    entity.setPos(
+      clamp(move.targetX, -FIELD_W/2, FIELD_W/2),
+      clamp(move.targetZ, -FIELD_L/2, FIELD_L/2)
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────
+// 13. CAMERA RIG
+// ─────────────────────────────────────────────────
+const cameraRig = {
+  targetPos: new THREE.Vector3(0, 14, 22),
+  targetLook: new THREE.Vector3(0, 0, 0),
+  lerpSpeed: 0.06,
+
+  reset() {
+    camera.position.set(0, 14, 22);
+    camera.lookAt(0, 0, 0);
+    this.targetPos.set(0, 14, 22);
+    this.targetLook.set(0, 0, 0);
+  },
+
+  update() {
+    if (!playerEntity) return;
+    // Follow ball carrier from behind
+    const cx = playerEntity.pos.x;
+    const cz = playerEntity.pos.z + 16;
+    this.targetPos.set(cx, 13, clamp(cz, -FIELD_L/2 + 5, FIELD_L/2 + 5));
+    this.targetLook.set(playerEntity.pos.x, 0, playerEntity.pos.z);
+
+    camera.position.lerp(this.targetPos, this.lerpSpeed);
+    const lookCurrent = new THREE.Vector3();
+    lookCurrent.copy(camera.position);
+    camera.lookAt(this.targetLook);
+  }
+};
+
+// ─────────────────────────────────────────────────
+// 14. TWEENER
+// ─────────────────────────────────────────────────
+class Tween {
+  constructor({ obj, props, duration, ease, onUpdate, onComplete }) {
+    this.obj = obj;
+    this.props = props; // { key: [from, to] }
+    this.duration = duration;
+    this.ease = ease || Ease.linear;
+    this.onUpdate = onUpdate || null;
+    this.onComplete = onComplete || null;
+    this.elapsed = 0;
+    this.done = false;
+  }
+  tick(dt) {
+    if (this.done) return;
+    this.elapsed += dt;
+    const t = Math.min(this.elapsed / this.duration, 1);
+    const et = this.ease(t);
+    for (const [key, [from, to]] of Object.entries(this.props)) {
+      this.obj[key] = from + (to - from) * et;
+    }
+    if (this.onUpdate) this.onUpdate(t, et);
+    if (t >= 1) {
+      this.done = true;
+      if (this.onComplete) this.onComplete();
+    }
+  }
+}
+
+const Ease = {
+  linear: t => t,
+  easeOut: t => 1 - (1-t)*(1-t),
+  easeInOut: t => t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2,
+};
+
+let activeTweens = [];
+function addTween(cfg) {
+  const tw = new Tween(cfg);
+  activeTweens.push(tw);
+  return tw;
+}
+function tickTweens(dt) {
+  activeTweens.forEach(tw => tw.tick(dt));
+  activeTweens = activeTweens.filter(tw => !tw.done);
+}
+
+// ─────────────────────────────────────────────────
+// 15. ANIMATE TURN (Promise-based)
+// ─────────────────────────────────────────────────
+function animateTurn(action, ballDest, aiMoves) {
+  return new Promise(resolve => {
+    const from = ballPos.clone();
+    const to = ballDest.finalBallPos.clone();
+    const arcH = ballDest.arcHeight || 0;
+    const startTime = performance.now();
+    const dur = ANIM_MS;
+
+    // Store AI start positions for interpolation
+    const aiStarts = aiMoves.map(({ entity, move }) => ({
+      entity,
+      move,
+      startX: entity.pos.x,
+      startZ: entity.pos.z,
+    }));
+
+    // Also animate player dribble
+    const playerStart = { x: playerEntity.pos.x, z: playerEntity.pos.z };
+
+    function frame(now) {
+      const elapsed = now - startTime;
+      const t = Math.min(elapsed / dur, 1);
+      const et = Ease.easeOut(t);
+
+      // Move ball
+      if (action.type === 'DRIBBLE') {
+        ballMesh.position.set(
+          from.x + (to.x - from.x) * et,
+          0.2 + Math.sin(t * Math.PI) * 0.3,
+          from.z + (to.z - from.z) * et
+        );
+        // Move player with ball
+        playerEntity.mesh.position.set(
+          playerStart.x + (to.x - playerStart.x) * et,
+          0,
+          playerStart.z + (to.z - playerStart.z) * et
+        );
+      } else {
+        // Arc ball
+        const pt = parabolicPoint(from, to, arcH, et);
+        ballMesh.position.copy(pt);
+      }
+
+      // Spin ball
+      ballMesh.rotation.x += 0.15;
+
+      // Move AI entities
+      aiStarts.forEach(({ entity, move, startX, startZ }) => {
+        if (move.type === 'move' || move.type === 'gk_move') {
+          entity.mesh.position.set(
+            startX + (move.targetX - startX) * et,
+            0,
+            startZ + (move.targetZ - startZ) * et
+          );
+        }
+      });
+
+      if (t < 1) {
+        requestAnimationFrame(frame);
+      } else {
+        resolve();
+      }
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+// ─────────────────────────────────────────────────
+// 16. CHECK GOAL / TACKLE / PASS
+// ─────────────────────────────────────────────────
+function checkGoal(pos) {
+  // Ball must cross AI goal line Z <= AI_GOAL_Z and be within goal width
+  return pos.z <= AI_GOAL_Z && Math.abs(pos.x) <= GOAL_W / 2;
+}
+
+function checkTackle() {
+  const aiEntities = entities.filter(e => e.team === TEAM.AI && e.role !== ROLE.GK);
+  return aiEntities.some(e => {
+    const dx = e.pos.x - ballPos.x;
+    const dz = e.pos.z - ballPos.z;
+    return Math.sqrt(dx*dx + dz*dz) < TACKLE_RADIUS;
+  });
+}
+
+function findPassReceiver(dir) {
+  const dv = DIR_VECTORS[dir];
+  // Find nearest teammate roughly in that direction
+  const teammates = entities.filter(e => e.team === TEAM.PLAYER && e !== playerEntity);
+  let best = null, bestScore = -Infinity;
+  teammates.forEach(e => {
+    const dx = e.pos.x - playerEntity.pos.x;
+    const dz = e.pos.z - playerEntity.pos.z;
+    const len = Math.sqrt(dx*dx + dz*dz);
+    if (len < 0.1) return;
+    const dot = (dx/len)*dv.nx + (dz/len)*dv.nz;
+    const score = dot - len * 0.05;
+    if (score > bestScore) { bestScore = score; best = e; }
+  });
+  return best;
+}
+
+// ─────────────────────────────────────────────────
+// 17. RENDER LOOP
+// ─────────────────────────────────────────────────
+let lastTime = performance.now();
+
+function tick() {
+  requestAnimationFrame(tick);
+  const now = performance.now();
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  if (gameState === STATE.PLAYING || gameState === STATE.RESOLVING) {
+    cameraRig.update();
+  }
+
+  renderer.render(scene, camera);
+}
+
+// ─────────────────────────────────────────────────
+// 18. BOOT
+// ─────────────────────────────────────────────────
+initThree();
+buildScene();
+tick();
+showScreen('menu');
+</script>
+</body>
+</html>
